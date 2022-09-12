@@ -564,110 +564,61 @@ static inline PNGU_u32 coordsRGBA8(PNGU_u32 x, PNGU_u32 y, PNGU_u32 w)
 }
 
 // Coded by Tantric for WiiMC (http://www.wiimc.org)
-PNGU_u8 * PNGU_DecodeTo4x4RGBA8 (IMGCTX ctx, PNGU_u32 width, PNGU_u32 height, int * dstWidth, int * dstHeight, PNGU_u8 *dstPtr)
+PNGU_u8 *PNGU_DecodeTo4x4RGBA8(IMGCTX ctx, PNGU_u32 width, PNGU_u32 height)
 {
-	PNGU_u8 default_alpha = 255;    // default alpha value, which is used if the source image doesn't have an alpha channel.
-	PNGU_u8 *dst;
-	int x, y, x2=0, y2=0, offset;
-	int xRatio = 0, yRatio = 0;
+	PNGU_u8 default_alpha = 255; // default alpha value, which is used if the source image doesn't have an alpha channel.
+	int x, y, offset;
 	png_byte *pixel;
 
-	if (pngu_decode (ctx, width, height, 0) != PNGU_OK)
+	if (pngu_decode(ctx, width, height, 0) != PNGU_OK)
 		return NULL;
 
-	int newWidth = width;
-	int newHeight = height;
+	int len = (width * height) << 2;
+	if (len % 32)
+		len += (32 - len % 32);
 
-	if(width > 1024 || height > 1024)
+	PNGU_u8 *dst = memalign(32, len);
+	if (!dst)
+		return NULL;
+
+	if (width > 1024 || height > 1024 || width % 4 != 0 || height % 4 != 0)
 	{
-		float ratio = (float)width/(float)height;
-
-		if(ratio > 1)
-		{
-			newWidth = 1024;
-			newHeight = 1024/ratio;
-		}
-		else
-		{
-			newWidth = 1024*ratio;
-			newHeight = 1024;
-		}
-		xRatio = (int)((width<<16)/newWidth)+1;
-		yRatio = (int)((height<<16)/newHeight)+1;
+		memset(dst, 0, len);
+		return NULL;
 	}
 
-	int padWidth = newWidth;
-	int padHeight = newHeight;
-	if(padWidth%4) padWidth += (4-padWidth%4);
-	if(padHeight%4) padHeight += (4-padHeight%4);
-
-	int len = (padWidth * padHeight) << 2;
-	if(len%32) len += (32-len%32);
-
-	if(dstPtr)
-		dst = dstPtr; // use existing allocation
-	else
-		dst = memalign (32, len);
-
-	if(!dst)
-		return NULL;
-
-	for (y = 0; y < padHeight; y++)
+	for (y = 0; y < height; y++)
 	{
-		for (x = 0; x < padWidth; x++)
+		for (x = 0; x < width; x++)
 		{
-			offset = coordsRGBA8(x, y, padWidth);
+			offset = coordsRGBA8(x, y, width);
 
-			if(y >= newHeight || x >= newWidth)
+			if (ctx->prop.imgColorType == PNGU_COLOR_TYPE_GRAY_ALPHA ||
+				ctx->prop.imgColorType == PNGU_COLOR_TYPE_RGB_ALPHA)
 			{
-				dst[offset] = 0;
-				dst[offset+1] = 255;
-				dst[offset+32] = 255;
-				dst[offset+33] = 255;
+				pixel = &(ctx->row_pointers[y][x * 4]);
+
+				dst[offset] = pixel[3];		 // Alpha
+				dst[offset + 1] = pixel[0];	 // Red
+				dst[offset + 32] = pixel[1]; // Green
+				dst[offset + 33] = pixel[2]; // Blue
 			}
 			else
 			{
-				if(xRatio > 0)
-				{
-					x2 = ((x*xRatio)>>16);
-					y2 = ((y*yRatio)>>16);
-				}
+				pixel = &(ctx->row_pointers[y][x * 3]);
 
-				if (ctx->prop.imgColorType == PNGU_COLOR_TYPE_GRAY_ALPHA ||
-					ctx->prop.imgColorType == PNGU_COLOR_TYPE_RGB_ALPHA)
-				{
-					if(xRatio > 0)
-						pixel = &(ctx->row_pointers[y2][x2*4]);
-					else
-						pixel = &(ctx->row_pointers[y][x*4]);
-
-					dst[offset] = pixel[3]; // Alpha
-					dst[offset+1] = pixel[0]; // Red
-					dst[offset+32] = pixel[1]; // Green
-					dst[offset+33] = pixel[2]; // Blue
-				}
-				else
-				{
-					if(xRatio > 0)
-						pixel = &(ctx->row_pointers[y2][x2*3]);
-					else
-						pixel = &(ctx->row_pointers[y][x*3]);
-
-					dst[offset] = default_alpha; // Alpha
-					dst[offset+1] = pixel[0]; // Red
-					dst[offset+32] = pixel[1]; // Green
-					dst[offset+33] = pixel[2]; // Blue
-				}
+				dst[offset] = default_alpha; // Alpha
+				dst[offset + 1] = pixel[0];	 // Red
+				dst[offset + 32] = pixel[1]; // Green
+				dst[offset + 33] = pixel[2]; // Blue
 			}
 		}
 	}
 
 	// Free resources
-	free (ctx->img_data);
-	free (ctx->row_pointers);
+	free(ctx->img_data);
+	free(ctx->row_pointers);
 
-	*dstWidth = padWidth;
-	*dstHeight = padHeight;
 	return dst;
 }
 
